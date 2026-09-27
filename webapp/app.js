@@ -1,5 +1,5 @@
 // EDIT THIS after you deploy the backend (Render/Railway URL, no trailing slash)
-const API_BASE = 'https://YOUR-BACKEND-URL.example.com';
+const API_BASE = 'https://video-upload-app-95q4.onrender.com';
 
 let selectedFile = null;
 
