@@ -17,7 +17,7 @@ from pathlib import Path
 import cloudinary
 import cloudinary.uploader
 import requests
-from flask import Flask, jsonify, redirect, request
+from flask import Flask, jsonify, redirect, request, session
 from flask_cors import CORS
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -26,7 +26,7 @@ from googleapiclient.http import MediaFileUpload
 
 app = Flask(__name__)
 CORS(app)  # tighten this to your PWA's origin once deployed
-
+app.secret_key = os.environ["FLASK_SECRET_KEY"]
 TOKENS_PATH = Path(__file__).parent / "tokens.json"
 
 # --- Config from environment (see .env.example) ---
@@ -90,12 +90,16 @@ def youtube_flow():
 def auth_youtube():
     flow = youtube_flow()
     auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
+    # PKCE: the verifier generated here must survive until the callback,
+    # since each request creates a brand new Flow object.
+    session["yt_code_verifier"] = flow.code_verifier
     return redirect(auth_url)
 
 
 @app.route("/auth/youtube/callback")
 def auth_youtube_callback():
     flow = youtube_flow()
+    flow.code_verifier = session.get("yt_code_verifier")
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
     tokens = load_tokens()
