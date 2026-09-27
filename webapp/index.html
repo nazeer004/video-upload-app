@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Publisher</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f0f0f">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Video Publisher</h1>
+  </header>
+
+  <section id="connect-section">
+    <h2>Accounts</h2>
+    <div class="account-row">
+      <span>YouTube</span>
+      <button id="yt-connect-btn">Connect</button>
+      <span id="yt-status" class="status"></span>
+    </div>
+    <div class="account-row">
+      <span>Instagram</span>
+      <button id="ig-connect-btn">Connect</button>
+      <span id="ig-status" class="status"></span>
+    </div>
+  </section>
+
+  <section id="upload-section">
+    <h2>Publish a video</h2>
+
+    <div id="drop-area">
+      <input type="file" id="file-input" accept="video/*" hidden>
+      <button id="pick-btn">Choose video</button>
+      <p id="file-name">No video selected — or share one into this app from your editor.</p>
+      <video id="preview" controls style="display:none; max-width:100%;"></video>
+    </div>
+
+    <label class="platform-check">
+      <input type="checkbox" id="platform-yt" checked> Post to YouTube
+    </label>
+    <label class="platform-check">
+      <input type="checkbox" id="platform-ig" checked> Post to Instagram
+    </label>
+
+    <label for="caption-main">Caption / description</label>
+    <textarea id="caption-main" rows="4" placeholder="Caption used for both platforms..."></textarea>
+
+    <label class="platform-check">
+      <input type="checkbox" id="split-caption"> Use a different caption for Instagram
+    </label>
+    <div id="ig-caption-wrap" style="display:none;">
+      <label for="caption-ig">Instagram caption</label>
+      <textarea id="caption-ig" rows="4" placeholder="Instagram-specific caption..."></textarea>
+    </div>
+
+    <button id="publish-btn" disabled>Publish</button>
+    <div id="publish-status"></div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
