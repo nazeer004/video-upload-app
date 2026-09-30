@@ -12,11 +12,14 @@ from instagram.com.
 
 Token storage is a single JSON file keyed by user id ("me" for now).
 That's intentional: swap load_tokens()/save_tokens() for real DB calls
-later without touching any of the route logic above them.
+later without touching any of the route logic above them. Note: on
+Render's free tier this file does NOT survive a redeploy -- reconnect
+both platforms after any code push that triggers a new deploy.
 """
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import cloudinary
@@ -230,6 +233,22 @@ def upload():
                     },
                 ).json()
                 creation_id = create_res["id"]
+
+                # Instagram processes video asynchronously -- poll until ready
+                # before publishing, or Instagram rejects the publish call
+                # with "Media ID is not available".
+                for _ in range(20):
+                    status_res = requests.get(
+                        f"https://graph.instagram.com/v19.0/{creation_id}",
+                        params={"fields": "status_code", "access_token": ig_token},
+                    ).json()
+                    if status_res.get("status_code") == "FINISHED":
+                        break
+                    if status_res.get("status_code") == "ERROR":
+                        raise Exception("Instagram failed to process the video")
+                    time.sleep(5)
+                else:
+                    raise Exception("Instagram video processing timed out")
 
                 publish_res = requests.post(
                     f"https://graph.instagram.com/v19.0/{ig_user_id}/media_publish",
