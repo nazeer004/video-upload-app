@@ -36,6 +36,7 @@ BACKEND_URL = os.environ["BACKEND_URL"]  # e.g. https://your-app.onrender.com
 META_APP_ID = os.environ["META_APP_ID"]
 META_APP_SECRET = os.environ["META_APP_SECRET"]
 IG_BUSINESS_ACCOUNT_ID = os.environ["IG_BUSINESS_ACCOUNT_ID"]
+META_LOGIN_CONFIG_ID = os.environ["META_LOGIN_CONFIG_ID"]
 
 cloudinary.config(
     cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
@@ -131,9 +132,11 @@ def auth_instagram():
     auth_url = (
         "https://www.facebook.com/v19.0/dialog/oauth"
         f"?client_id={META_APP_ID}&redirect_uri={redirect_uri}"
-        "&scope=instagram_content_publish,pages_show_list,business_management"
+        f"&config_id={META_LOGIN_CONFIG_ID}"
+        "&response_type=code"
     )
     return redirect(auth_url)
+
 
 
 @app.route("/auth/instagram/callback")
