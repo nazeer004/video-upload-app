@@ -5,6 +5,11 @@ Handles OAuth for YouTube + Instagram, stages the video on Cloudinary
 (Instagram's API requires a public URL, not a raw upload), then publishes
 to both platforms.
 
+Instagram uses the "Instagram Login" flow (Business Login for Instagram) --
+simpler than Facebook Login for Business for a single personal account:
+no Facebook Page required, no business verification, token comes straight
+from instagram.com.
+
 Token storage is a single JSON file keyed by user id ("me" for now).
 That's intentional: swap load_tokens()/save_tokens() for real DB calls
 later without touching any of the route logic above them.
@@ -33,10 +38,8 @@ TOKENS_PATH = Path(__file__).parent / "tokens.json"
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 GOOGLE_CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
 BACKEND_URL = os.environ["BACKEND_URL"]  # e.g. https://your-app.onrender.com
-META_APP_ID = os.environ["META_APP_ID"]
-META_APP_SECRET = os.environ["META_APP_SECRET"]
-IG_BUSINESS_ACCOUNT_ID = os.environ["IG_BUSINESS_ACCOUNT_ID"]
-META_LOGIN_CONFIG_ID = os.environ["META_LOGIN_CONFIG_ID"]
+INSTAGRAM_APP_ID = os.environ["INSTAGRAM_APP_ID"]
+INSTAGRAM_APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
 
 cloudinary.config(
     cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
@@ -122,51 +125,57 @@ def get_youtube_client():
     return build("youtube", "v3", credentials=creds)
 
 
-# ---------------- Instagram OAuth ----------------
-# Uses Meta's Graph API via a Business/Creator Instagram account linked
-# to a Facebook Page. Personal Instagram accounts cannot use this API.
+# ---------------- Instagram OAuth (Instagram Login flow) ----------------
+# Uses instagram.com directly -- no Facebook Page, no Business Login,
+# no business verification. Requires the Instagram account to be a
+# Business or Creator account, and the app's "Instagram API setup with
+# Instagram login" product to be configured with this redirect URI.
 
 @app.route("/auth/instagram")
 def auth_instagram():
     redirect_uri = f"{BACKEND_URL}/auth/instagram/callback"
     auth_url = (
-        "https://www.facebook.com/v19.0/dialog/oauth"
-        f"?client_id={META_APP_ID}&redirect_uri={redirect_uri}"
-        f"&config_id={META_LOGIN_CONFIG_ID}"
+        "https://www.instagram.com/oauth/authorize"
+        f"?client_id={INSTAGRAM_APP_ID}&redirect_uri={redirect_uri}"
         "&response_type=code"
+        "&scope=instagram_business_basic,instagram_business_content_publish"
     )
     return redirect(auth_url)
-
 
 
 @app.route("/auth/instagram/callback")
 def auth_instagram_callback():
     code = request.args.get("code")
     redirect_uri = f"{BACKEND_URL}/auth/instagram/callback"
-    token_res = requests.get(
-        "https://graph.facebook.com/v19.0/oauth/access_token",
-        params={
-            "client_id": META_APP_ID,
-            "client_secret": META_APP_SECRET,
+
+    token_res = requests.post(
+        "https://api.instagram.com/oauth/access_token",
+        data={
+            "client_id": INSTAGRAM_APP_ID,
+            "client_secret": INSTAGRAM_APP_SECRET,
+            "grant_type": "authorization_code",
             "redirect_uri": redirect_uri,
             "code": code,
         },
     ).json()
     short_token = token_res["access_token"]
+    ig_user_id = token_res["user_id"]
 
     # Exchange for a long-lived token (~60 days) so you're not reconnecting often.
     long_res = requests.get(
-        "https://graph.facebook.com/v19.0/oauth/access_token",
+        "https://graph.instagram.com/access_token",
         params={
-            "grant_type": "fb_exchange_token",
-            "client_id": META_APP_ID,
-            "client_secret": META_APP_SECRET,
-            "fb_exchange_token": short_token,
+            "grant_type": "ig_exchange_token",
+            "client_secret": INSTAGRAM_APP_SECRET,
+            "access_token": short_token,
         },
     ).json()
 
     tokens = load_tokens()
-    tokens.setdefault(USER_ID, {})["instagram"] = {"access_token": long_res["access_token"]}
+    tokens.setdefault(USER_ID, {})["instagram"] = {
+        "access_token": long_res["access_token"],
+        "ig_user_id": ig_user_id,
+    }
     save_tokens(tokens)
     return "Instagram connected. You can close this tab."
 
@@ -207,9 +216,12 @@ def upload():
                 upload_result = cloudinary.uploader.upload_large(tmp_path, resource_type="video")
                 video_url = upload_result["secure_url"]
 
-                ig_token = load_tokens()[USER_ID]["instagram"]["access_token"]
+                ig_tokens = load_tokens()[USER_ID]["instagram"]
+                ig_token = ig_tokens["access_token"]
+                ig_user_id = ig_tokens["ig_user_id"]
+
                 create_res = requests.post(
-                    f"https://graph.facebook.com/v19.0/{IG_BUSINESS_ACCOUNT_ID}/media",
+                    f"https://graph.instagram.com/v19.0/{ig_user_id}/media",
                     data={
                         "media_type": "REELS",
                         "video_url": video_url,
@@ -220,7 +232,7 @@ def upload():
                 creation_id = create_res["id"]
 
                 publish_res = requests.post(
-                    f"https://graph.facebook.com/v19.0/{IG_BUSINESS_ACCOUNT_ID}/media_publish",
+                    f"https://graph.instagram.com/v19.0/{ig_user_id}/media_publish",
                     data={"creation_id": creation_id, "access_token": ig_token},
                 ).json()
                 results["instagram"] = "ok" if "id" in publish_res else publish_res
