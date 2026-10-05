@@ -5,68 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Video Publisher</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0f5e66">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<meta name="theme-color" content="#161513">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main>
-  <h1>Video Publisher</h1>
-  <p class="sub">Upload once, post to YouTube and Instagram.</p>
+  <header>
+    <h1>Video Publisher</h1>
+  </header>
 
-  <section class="accounts" aria-label="Accounts">
-    <div class="card acct">
-      <div class="mark" aria-hidden="true">YT</div>
-      <div class="who"><div class="name">YouTube</div><div class="state" id="yt-status">Checking…</div></div>
-      <button class="btn" id="yt-connect-btn" type="button">Connect</button>
+  <section id="connect-section">
+    <h2>Accounts</h2>
+    <div class="account-row">
+      <span class="account-name">YouTube</span>
+      <span id="yt-status" class="status-dot" data-connected="false"></span>
+      <span id="yt-status-text" class="status-text">Not connected</span>
+      <button id="yt-connect-btn" class="btn-secondary">Connect</button>
     </div>
-    <div class="card acct">
-      <div class="mark" aria-hidden="true">IG</div>
-      <div class="who"><div class="name">Instagram</div><div class="state" id="ig-status">Checking…</div></div>
-      <button class="btn" id="ig-connect-btn" type="button">Connect</button>
+    <div class="account-row">
+      <span class="account-name">Instagram</span>
+      <span id="ig-status" class="status-dot" data-connected="false"></span>
+      <span id="ig-status-text" class="status-text">Not connected</span>
+      <button id="ig-connect-btn" class="btn-secondary">Connect</button>
     </div>
   </section>
 
-  <div class="layout">
-    <section>
-      <div class="frame" id="frame">
-        <div class="drop"><strong>No video selected</strong><span id="file-name">Choose a file, or share one here from your editor.</span></div>
-        <video id="preview" controls playsinline hidden></video>
-      </div>
-      <p class="meta" id="file-meta"></p>
+  <section id="upload-section">
+    <h2>Publish a video</h2>
+
+    <div id="drop-area">
       <input type="file" id="file-input" accept="video/*" hidden>
-      <button class="btn block" id="pick-btn" type="button">Choose video</button>
-    </section>
+      <button id="pick-btn" class="btn-secondary">Choose video</button>
+      <p id="file-name">No video selected — or share one in from your editor.</p>
+      <video id="preview" controls></video>
+    </div>
 
-    <section class="card">
-      <fieldset>
-        <legend>Post to</legend>
-        <div class="targets">
-          <label id="lbl-yt"><input type="checkbox" id="platform-yt" checked> YouTube</label>
-          <label id="lbl-ig"><input type="checkbox" id="platform-ig" checked> Instagram</label>
-        </div>
-      </fieldset>
+    <div class="platform-row">
+      <label class="platform-check">
+        <input type="checkbox" id="platform-yt" checked>
+        <span>YouTube</span>
+      </label>
+      <label class="platform-check">
+        <input type="checkbox" id="platform-ig" checked>
+        <span>Instagram</span>
+      </label>
+    </div>
 
-      <div class="field">
-        <div class="row"><label for="caption-main">Caption / description</label><span class="count" id="count-main">0</span></div>
-        <textarea id="caption-main" rows="5"></textarea>
-        <p class="hint" id="yt-title-hint">YouTube title: <span id="yt-title">New video</span></p>
-        <p class="hint">YouTube uses the first 100 characters as the title and the full text as the description.</p>
-      </div>
+    <label for="caption-main">Caption</label>
+    <textarea id="caption-main" rows="4" placeholder="Used for both platforms unless you set one below"></textarea>
 
-      <label class="check"><input type="checkbox" id="split-caption"> Use a different caption for Instagram</label>
-      <div class="field" id="ig-caption-wrap" hidden>
-        <div class="row"><label for="caption-ig">Instagram caption</label><span class="count" id="count-ig">0/2200</span></div>
-        <textarea id="caption-ig" rows="4"></textarea>
-      </div>
+    <label class="platform-check">
+      <input type="checkbox" id="split-caption">
+      <span>Different caption for Instagram</span>
+    </label>
+    <div id="ig-caption-wrap" hidden>
+      <label for="caption-ig">Instagram caption</label>
+      <textarea id="caption-ig" rows="4"></textarea>
+    </div>
 
-      <button class="btn primary block" id="publish-btn" type="button" disabled>Publish</button>
-      <div class="bar" id="bar-wrap" hidden><i id="bar"></i></div>
-      <p class="status" id="publish-status" role="status" aria-live="polite"></p>
-      <ul class="results" id="results"></ul>
-    </section>
-  </div>
-</main>
-<script src="app.js"></script>
+    <p id="validation-msg" class="validation-msg" hidden></p>
+
+    <button id="publish-btn" class="btn-primary" disabled>Publish</button>
+    <div id="publish-status"></div>
+  </section>
+
+  <script src="app.js"></script>
 </body>
 </html>
