@@ -5,21 +5,35 @@ Handles OAuth for YouTube + Instagram, stages the video on Cloudinary
 (Instagram's API requires a public URL, not a raw upload), then publishes
 to both platforms.
 
-Instagram uses the "Instagram Login" flow (Business Login for Instagram) --
-simpler than Facebook Login for Business for a single personal account:
-no Facebook Page required, no business verification, token comes straight
-from instagram.com.
+Security notes:
+- /api/upload requires a valid, authenticated session. The session is
+  only marked authenticated after you actually complete a real OAuth
+  login with Google or Instagram -- there's no password or key sitting
+  in the frontend code for someone to find. The session cookie itself is
+  HttpOnly, so JavaScript (including anything injected by an attacker)
+  can't read or steal it; only the browser silently attaches it to
+  requests to this exact backend.
+- CORS is restricted to your actual Netlify origin, not left wide open,
+  and explicitly allows credentials (cookies) only from that origin.
+- This protects against a stranger who finds your backend URL and tries
+  calling it directly. It does not protect against someone who gets
+  physical/remote access to your actual unlocked phone while the app is
+  open and already logged in -- no web security layer can stop that,
+  the same way no website can stop someone using your already-unlocked
+  phone to use any other app you're logged into.
+- Real credentials (Google/Meta/Cloudinary keys) have never been sent to
+  the frontend -- they live only in this process's environment variables.
 
 Token storage is a single JSON file keyed by user id ("me" for now).
-That's intentional: swap load_tokens()/save_tokens() for real DB calls
-later without touching any of the route logic above them. Note: on
-Render's free tier this file does NOT survive a redeploy -- reconnect
-both platforms after any code push that triggers a new deploy.
+Note: on Render's free tier this file does NOT survive a redeploy --
+reconnect both platforms after any code push that triggers a new deploy.
 """
 import json
 import os
 import tempfile
 import time
+from datetime import timedelta
+from functools import wraps
 from pathlib import Path
 
 import cloudinary
@@ -33,8 +47,25 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 app = Flask(__name__)
-CORS(app)  # tighten this to your PWA's origin once deployed
+
+FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]  # e.g. https://video-publisher.netlify.app
+CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
+
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    # SameSite=None is required for the cookie to be sent on cross-origin
+    # fetch calls from the Netlify frontend to this Render backend; it's
+    # safe here because it's paired with Secure (HTTPS-only) and an exact
+    # CORS origin allowlist above, not a wildcard.
+    SESSION_COOKIE_SAMESITE="None",
+)
+# Without this, the session cookie clears whenever the browser/PWA fully
+# closes, forcing a reconnect every reopen. 60 days roughly matches
+# Instagram's own long-lived token expiry.
+app.permanent_session_lifetime = timedelta(days=60)
+
 TOKENS_PATH = Path(__file__).parent / "tokens.json"
 
 # --- Config from environment (see .env.example) ---
@@ -54,6 +85,15 @@ YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 USER_ID = "me"  # single personal user for now
 
 
+def require_session(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("authenticated"):
+            return jsonify({"error": "not logged in"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
 def load_tokens():
     if TOKENS_PATH.exists():
         return json.loads(TOKENS_PATH.read_text())
@@ -68,6 +108,9 @@ def save_tokens(data):
 
 @app.route("/api/status")
 def status():
+    # No account details are ever returned here, just two booleans, so
+    # this one stays open -- it's what lets the page show connect status
+    # on first load, before any session exists yet.
     tokens = load_tokens().get(USER_ID, {})
     return jsonify({
         "youtube_connected": "youtube" in tokens,
@@ -76,6 +119,9 @@ def status():
 
 
 # ---------------- YouTube OAuth ----------------
+# These routes themselves ARE the login -- reaching them starts or
+# completes an OAuth flow with Google/Meta directly. Their only effect is
+# setting session["authenticated"] once that real login succeeds.
 
 def youtube_flow():
     return Flow.from_client_config(
@@ -97,8 +143,6 @@ def youtube_flow():
 def auth_youtube():
     flow = youtube_flow()
     auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
-    # PKCE: the verifier generated here must survive until the callback,
-    # since each request creates a brand new Flow object.
     session["yt_code_verifier"] = flow.code_verifier
     return redirect(auth_url)
 
@@ -119,6 +163,8 @@ def auth_youtube_callback():
         "scopes": creds.scopes,
     }
     save_tokens(tokens)
+    session.permanent = True
+    session["authenticated"] = True
     return "YouTube connected. You can close this tab."
 
 
@@ -129,10 +175,6 @@ def get_youtube_client():
 
 
 # ---------------- Instagram OAuth (Instagram Login flow) ----------------
-# Uses instagram.com directly -- no Facebook Page, no Business Login,
-# no business verification. Requires the Instagram account to be a
-# Business or Creator account, and the app's "Instagram API setup with
-# Instagram login" product to be configured with this redirect URI.
 
 @app.route("/auth/instagram")
 def auth_instagram():
@@ -164,7 +206,6 @@ def auth_instagram_callback():
     short_token = token_res["access_token"]
     ig_user_id = token_res["user_id"]
 
-    # Exchange for a long-lived token (~60 days) so you're not reconnecting often.
     long_res = requests.get(
         "https://graph.instagram.com/access_token",
         params={
@@ -180,12 +221,15 @@ def auth_instagram_callback():
         "ig_user_id": ig_user_id,
     }
     save_tokens(tokens)
+    session.permanent = True
+    session["authenticated"] = True
     return "Instagram connected. You can close this tab."
 
 
 # ---------------- Publish ----------------
 
 @app.route("/api/upload", methods=["POST"])
+@require_session
 def upload():
     video = request.files["video"]
     caption_main = request.form.get("caption_main", "")
@@ -215,7 +259,6 @@ def upload():
 
         if post_instagram:
             try:
-                # Instagram needs a public URL, not the raw file -> stage on Cloudinary first.
                 upload_result = cloudinary.uploader.upload_large(tmp_path, resource_type="video")
                 video_url = upload_result["secure_url"]
 
@@ -234,9 +277,6 @@ def upload():
                 ).json()
                 creation_id = create_res["id"]
 
-                # Instagram processes video asynchronously -- poll until ready
-                # before publishing, or Instagram rejects the publish call
-                # with "Media ID is not available".
                 for _ in range(20):
                     status_res = requests.get(
                         f"https://graph.instagram.com/v19.0/{creation_id}",
@@ -256,7 +296,6 @@ def upload():
                 ).json()
                 results["instagram"] = "ok" if "id" in publish_res else publish_res
 
-                # Clean up the staged copy now that Instagram has ingested it.
                 cloudinary.uploader.destroy(upload_result["public_id"], resource_type="video")
             except Exception as e:
                 results["instagram"] = f"failed: {e}"
