@@ -193,7 +193,7 @@ def auth_instagram_callback():
     code = request.args.get("code")
     redirect_uri = f"{BACKEND_URL}/auth/instagram/callback"
 
-    token_res = requests.post(
+       token_res = requests.post(
         "https://api.instagram.com/oauth/access_token",
         data={
             "client_id": INSTAGRAM_APP_ID,
@@ -203,9 +203,12 @@ def auth_instagram_callback():
             "code": code,
         },
     ).json()
+    if "access_token" not in token_res:
+        return jsonify({"error": "instagram short-token exchange failed", "details": token_res}), 500
     short_token = token_res["access_token"]
     ig_user_id = token_res["user_id"]
 
+    # Exchange for a long-lived token (~60 days) so you're not reconnecting often.
     long_res = requests.get(
         "https://graph.instagram.com/access_token",
         params={
@@ -214,6 +217,8 @@ def auth_instagram_callback():
             "access_token": short_token,
         },
     ).json()
+    if "access_token" not in long_res:
+        return jsonify({"error": "instagram long-token exchange failed", "details": long_res}), 500
 
     tokens = load_tokens()
     tokens.setdefault(USER_ID, {})["instagram"] = {
