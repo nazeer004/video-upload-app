@@ -193,7 +193,7 @@ def auth_instagram_callback():
     code = request.args.get("code")
     redirect_uri = f"{BACKEND_URL}/auth/instagram/callback"
 
-       token_res = requests.post(
+    token_res = requests.post(
         "https://api.instagram.com/oauth/access_token",
         data={
             "client_id": INSTAGRAM_APP_ID,
@@ -208,7 +208,6 @@ def auth_instagram_callback():
     short_token = token_res["access_token"]
     ig_user_id = token_res["user_id"]
 
-    # Exchange for a long-lived token (~60 days) so you're not reconnecting often.
     long_res = requests.get(
         "https://graph.instagram.com/access_token",
         params={
